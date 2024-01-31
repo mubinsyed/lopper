@@ -40,6 +40,9 @@ def xlnx_generate_domain_dts(tgt_node, sdt, options):
     3. Delete the other cpu cluster nodes.
     4. Rename the procsessor cpu cluster node to cpus.
     5. Remove delete node lables from symbol node.
+    For Linux Device-tree it does the below updates as well
+    6. Keeps the status disabled nodes in the final device-tree.
+    7. Delete the nodes that have an xlnx,ip-name property value mentioned in the linux_ignore_ip_list.
     """
     machine = options['args'][0]
     symbol_node = sdt.tree['/__symbols__']
@@ -66,7 +69,7 @@ def xlnx_generate_domain_dts(tgt_node, sdt, options):
     for node in clustercpu_nodes:
         if node.name != '' and node in match_cpunode.parent.subnodes():
             continue
-        if node.name != '' and node.name != "idle-states":
+        if node.name != '' and node.name != "idle-states" and node.name != "amba_pl":
             sdt.tree.delete(node)
 
     cells = na + ns
@@ -78,7 +81,7 @@ def xlnx_generate_domain_dts(tgt_node, sdt, options):
 
     node_list = []
     for node in root_sub_nodes:
-        if linux_dt and node.name == "memory@fffc0000" or node.name == "memory@bbf00000":
+        if linux_dt and (node.name == "memory@fffc0000" or node.name == "memory@bbf00000"):
             sdt.tree.delete(node)
         if node.propval('status') != ['']:
             if linux_dt and node.name == "smmu@fd800000" and machine == "psu_cortexa53_0":
@@ -154,15 +157,15 @@ def xlnx_generate_domain_dts(tgt_node, sdt, options):
                             'psv_coresight_a721_etm', 'psv_coresight_a721_pmu', 'psv_coresight_a721_cti',
                             'psv_coresight_a721_pmu', 'psv_coresight_a721_cti', 'psv_coresight_apu_ela',
                             'psv_coresight_apu_etf', 'psv_coresight_apu_fun', 'psv_coresight_cpm_atm', 'psv_coresight_cpm_cti2a',
-                            'psv_tcm_global', 'psv_r5_tcm', 'psu_apu', 'psu_bbram_0', 'psu_cci_gpv', 'psu_crf_apb', 'psu_crl_apb',
+                            'psu_apu', 'psu_bbram_0', 'psu_cci_gpv', 'psu_crf_apb', 'psu_crl_apb',
                             'psu_csu_0', 'psu_ddr_phy', 'psu_ddr_qos_ctrl', 'psu_ddr_xmpu0_cfg', 'psu_ddr_xmpu1_cfg',
                             'psu_ddr_xmpu2_cfg', 'psu_ddr_xmpu3_cfg', 'psu_ddr_xmpu4_cfg', 'psu_ddr_xmpu5_cfg', 'psu_efuse',
                             'psu_fpd_gpv', 'psu_fpd_slcr', 'psu_fpd_slcr_secure', 'psu_fpd_xmpu_cfg', 'psu_fpd_xmpu_sink',
                             'psu_iou_scntr', 'psu_iou_scntrs', 'psu_iousecure_slcr', 'psu_iouslcr_0', 'psu_lpd_slcr',
                             'psu_lpd_slcr_secure', 'psu_lpd_xppu_sink', 'psu_mbistjtag', 'psu_message_buffers', 'psu_ocm_xmpu_cfg',
                             'psu_pcie_attrib_0', 'psu_pcie_dma', 'psu_pcie_high1', 'psu_pcie_high2', 'psu_pcie_low',
-                            'psu_pmu_global_0', 'psu_qspi_linear_0', 'psu_rpu', 'psu_rsa', 'psu_siou', 'psu_ipi', 'psu_r5_tcm_ram',
-                            'psx_tcm_global', 'psx_PSM_PPU', 'psx_ram_instr_cntlr', 'psx_rpu',
+                            'psu_pmu_global_0', 'psu_qspi_linear_0', 'psu_rpu', 'psu_rsa', 'psu_siou', 'psu_ipi',
+                            'psx_PSM_PPU', 'psx_ram_instr_cntlr', 'psx_rpu',
                             'psx_fpd_gpv']
 
     for node in root_sub_nodes:
@@ -170,6 +173,8 @@ def xlnx_generate_domain_dts(tgt_node, sdt, options):
             if node.propval('xlnx,ip-name') != ['']:
                 val = node.propval('xlnx,ip-name', list)[0]
                 if val in linux_ignore_ip_list:
+                    sdt.tree.delete(node)
+                elif 'xlnx,zynqmp-ipi-mailbox' in node.propval('compatible'):
                     sdt.tree.delete(node)
             elif node.name == "rpu-bus":
                 sdt.tree.delete(node)
@@ -179,6 +184,8 @@ def xlnx_generate_domain_dts(tgt_node, sdt, options):
                     continue
             if node.propval('status') != ['']:
                 if 'disabled' in node.propval('status', list)[0] and linux_dt:
+                    continue
+                elif "tcm" in node.propval('compatible', list)[0]:
                     continue
                 else:
                     sdt.tree.delete(node)
@@ -194,6 +201,10 @@ def xlnx_generate_domain_dts(tgt_node, sdt, options):
     for prop in prop_list:
         if prop not in match_label_list:
             sdt.tree['/__symbols__'].delete(prop)
+        if prop == "gic_a53" or prop == "gic_a72" and linux_dt:
+            val = sdt.tree['/__symbols__'].propval(prop, list)[0]
+            val = val.replace("apu-bus", "axi")
+            sdt.tree['/__symbols__'].propval(prop, list)[0] = val
 
     # Add new property which will be consumed by other assists
     if not linux_dt:

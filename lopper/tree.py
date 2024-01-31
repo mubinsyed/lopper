@@ -255,7 +255,9 @@ class LopperProp():
         """
         if self.pclass == 'json':
             loaded_j = json.loads( self.value )
-            yield 'value', loaded_j
+            for chunk in loaded_j:
+                yield chunk
+            #yield 'value', loaded_j
         else:
             if type( self.value ) == list:
                 yield 'value', self.value
@@ -2641,7 +2643,7 @@ class LopperNode(object):
                 unit_address = int(self.name.split('@')[1],16)
                 lopper.log._debug( f"{chr(0x20)*nest_count}unit address: {hex(unit_address)}" )
             except Exception as e:
-                lopper.log._warning( f"node {self.name} has no unit address: {unit_address}" )
+                lopper.log._debug( f"node {self.name} has no unit address: {unit_address}" )
                 # No @ or it isn't a hex, so we have nothing to translate
                 return None
 

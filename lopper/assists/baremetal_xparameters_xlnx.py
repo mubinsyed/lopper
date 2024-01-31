@@ -170,9 +170,6 @@ def xlnx_generate_xparams(tgt_node, sdt, options):
                                 if is_pl:
                                     plat.buf(f'\n#define XPAR_FABRIC_{label_name}_INTR {intr_id[0]}')
                                     canondef_dict.update({"FABRIC":intr_id[0]})
-                            else:
-                                plat.buf(f'\n#define XPAR_{label_name}_INTR {intr_id[0]}')
-                                canondef_dict.update({"INTR":intr_id[0]})
                         except KeyError:
                             intr_id = [0xFFFF]
 
@@ -266,8 +263,12 @@ def xlnx_generate_xparams(tgt_node, sdt, options):
                             prop = prop.replace("xlnx,", "")
 
                             if isinstance(prop_val[0], str):
-                                canondef_dict.update({prop:f'"{prop_val[0]}"'})
-                                plat.buf(f'\n#define XPAR_{label_name}_{prop.upper()} "{prop_val[0]}"')
+                                if prop_val[0].replace('.','',1).isdigit():
+                                    canondef_dict.update({prop:f'{prop_val[0]}'})
+                                    plat.buf(f'\n#define XPAR_{label_name}_{prop.upper()} {prop_val[0]}')
+                                else:
+                                    canondef_dict.update({prop:f'"{prop_val[0]}"'})
+                                    plat.buf(f'\n#define XPAR_{label_name}_{prop.upper()} "{prop_val[0]}"')
                             elif len(prop_val) > 1:
                                 for k,item in enumerate(prop_val):
                                     cannon_prop = prop + str("_") + str(k)

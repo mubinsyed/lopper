@@ -57,7 +57,7 @@ def usage():
     prog = os.path.basename(sys.argv[0])
     print('Usage: %s <system device tree> -- <xlnx_overlay_dt.py> <machine name> <configuration>' % prog)
     print('  machine name:         cortexa53-zynqmp or cortexa72-versal')
-    print('  configuration:        full or dfx-static or dfx-partial' )
+    print('  configuration:        full or dfx' )
 
 """
 This API generates the overlay dts file by taking pl.dtsi
@@ -67,19 +67,34 @@ Args:
     sdt:      is the system device-tree
     options:  There are two valid options
               Machine name as cortexa53-zynqmp or cortexa72-versal
-              An optional argument full/dfx-static/dfx-partial
-                  The default will be full
+              An optional argument full/dfx. The default will be full.
 """
 def xlnx_generate_overlay_dt(tgt_node, sdt, options):
     root_node = sdt.tree[tgt_node]
     root_sub_nodes = root_node.subnodes()
 
     symbol_node = ""
-    plat = DtbtoCStruct('pl.dtsi')
+    gic_node = ""
+    platform = "None"
+    config = "None"
+    imux_node = ""
+    try:
+        platform = options['args'][0]
+        config = options['args'][1]
+    except:
+        pass
+    outfile = os.path.join(sdt.outdir, 'pl.dtsi')
+    plat = DtbtoCStruct(outfile)
     for node in root_sub_nodes:
         try:
             if node.name == "__symbols__":
                 symbol_node = node
+            if node.name == "interrupt-multiplex":
+                imux_node = node
+            if platform == "cortexa53-zynqmp" and node.name == "interrupt-controller@f9010000":
+                gic_node = node
+            elif platform == "cortexa72-versal" and node.name == "interrupt-controller@f9000000":
+                gic_node = node
         except:
            pass
 
@@ -96,27 +111,28 @@ def xlnx_generate_overlay_dt(tgt_node, sdt, options):
         except:
            pass
 
+    fpga_ignore_list = []
+    for node in root_sub_nodes:
+
+        try:
+            if re.search("fpga-PR*" , node.name):
+               fpga_ignore_list.append(node)
+
+        except:
+           pass
+
     # Initialize the variables to its defaults
     root = 1
     tab_len = 0
-    platform = "None"
-    config = "None"
     parent_node = ""
     parent_tab = 0
-    try:
-        platform = options['args'][0]
-        config = options['args'][1]
-    except:
-        pass
 
     # If no config option is provided then the default is
     # full bit stream support
     if config == "None":
         config = "full"
 
-    # TODO - dfx-partial is not yet implemented, once implemented remove this
-    #        comments.
-    if config != "full" and config != "dfx-static" and config != "dfx-partial":
+    if config != "full" and config != "dfx":
         print('%s is not a valid argument' % str(config))
         usage()
         sys.exit(1)        
@@ -165,12 +181,12 @@ def xlnx_generate_overlay_dt(tgt_node, sdt, options):
                         # ZynqMP(full) and Versal(segmented configuration) requires
                         # firmware-name dt property.
                         #
-                        # configuration "dfx-static" is used for ZynqMP(DFx-Static)
-                        # and Versal(DFx-Static). For Versal DFx Static we need
+                        # configuration "dfx" is used for ZynqMP(DFx) and
+                        # Versal(DFx). For Versal DFx Static we need
                         # external-fpga-config dt property.
-                        if platform != "microblaze":
+                        if config == "full" and platform != "microblaze" or config == "dfx" and platform == "cortexa53-zynqmp":
                             plat.buf('\n\t%s' % node['firmware-name'])
-                        elif config == "dfx-static" and platform != "microblaze" and platform != "cortexa9-zynq" and platform != "cortexa53-zynqmp":
+                        elif config == "dfx" and platform != "microblaze" and platform != "cortexa9-zynq" and platform != "cortexa53-zynqmp":
                             plat.buf('\n\texternal-fpga-config;')
                         else:
                             print('%s is not a valid Machine' % str(platform))
@@ -179,6 +195,14 @@ def xlnx_generate_overlay_dt(tgt_node, sdt, options):
                     except:
                         pass
 
+                    for inode in fpga_ignore_list:
+                        label_name = get_label(sdt, symbol_node, inode)
+                        plat.buf('\n\t%s: %s {' % (label_name, inode.name))
+                        for p in inode.__props__.values():
+                            if re.search("phandle =", str(p)) or str(p) == '':
+                                continue
+                            plat.buf('\n\t\t%s' % p)
+                        plat.buf('\n\t};')
                     plat.buf('\n};')
 
                     # Create overlay1: __overlay__ node under fragment@1
@@ -211,6 +235,10 @@ def xlnx_generate_overlay_dt(tgt_node, sdt, options):
                     if re.match(ignoreip.name , node.name):
                        set_ignore = 1
 
+                for ignoreip in fpga_ignore_list:
+                    if re.match(ignoreip.name , node.name):
+                       set_ignore = 1
+
                 if set_ignore == 1:
                     continue
 
@@ -234,6 +262,10 @@ def xlnx_generate_overlay_dt(tgt_node, sdt, options):
                         if re.search("clocks =", str(p)):
                             plat.buf('%s' % node['clocks'])
                         else:
+                            if p.name == "interrupt-parent":
+                                if gic_node and imux_node:
+                                    if p.value[0] == imux_node.phandle:
+                                        p.value =  gic_node.phandle
                             plat.buf('%s' % p)
 
                     plat.buf('\n')
