@@ -97,19 +97,13 @@ def scan_reg_size(node, value, idx):
     if cells > 2:
         reg1 = value[cells * idx]
         if reg1 != 0:
-            val = str(hex(value[cells * idx + 1]))[2:]
-            pad = 8 - len(val)
-            val = val.ljust(pad + len(val), '0')
-            reg = int((str(hex(reg1)) + val), base=16)
+            reg = int(f"{hex(reg1)}{value[cells * idx + 1]:08x}", base=16)
         else:
             reg = value[cells * idx + 1]
 
         size1 = value[cells * idx + na]
         if size1 != 0:
-            val = str(hex(value[cells * idx + ns + 1]))[2:]
-            pad = 8 - len(val)
-            val = val.ljust(pad + len(val), '0')
-            size = int((str(hex(size1)) + val), base=16)
+            size = int(f"{hex(size1)}{value[cells * idx + ns + 1]:08x}", base=16)
         else:
             size = value[cells * idx + ns + 1]
     elif cells == 2:
@@ -117,6 +111,16 @@ def scan_reg_size(node, value, idx):
         size = value[idx * cells + 1]
     else:
         reg = value[0]
+
+    # 4 GB (0xFFFFFFFF) is a boundary condition for a 32-bit cell size. Size is calculated
+    # using (high_addr - low_addr + 1) in SDT. When the complete 4 GB DDR is used for a
+    # 32 bit processor, the size becomes 0x100000000 using the above calculation and result
+    # into an overflow for a 32-bit cell size in SDT. To avoid this overflow, (+1) is
+    # removed in SDT for this particular boundary condition and it is being done here in
+    # assist to get the correct size in linker and xparameters.
+    if size == 4294967295 and reg == 0:
+        size = 4294967296
+
     return reg, size
 
 def get_interrupt_prop(sdt, node, value):
@@ -211,19 +215,18 @@ def scan_ranges_size(range_value, ns):
     concatenate the higher and the lower cells.
     e.g. <0x4 0x80000000> => 0x480000000
     """
-    addr = hex(range_value[2])
-    high_addr_cell = hex(range_value[1])
-    if high_addr_cell != "0x0":
-        addr = high_addr_cell + addr.lstrip('0x').ljust(8, '0')
+    addr = range_value[2]
+    high_addr_cell = range_value[1]
+    if high_addr_cell != 0:
+        addr = int(f"{hex(high_addr_cell)}{addr:08x}", base=16)
 
-    size = hex(range_value[-1])
-    high_size_cell = hex(range_value[-2])
+    size = range_value[-1]
+    high_size_cell = range_value[-2]
     # If ns = 1, then there is no use of high_size_cells
-    if high_size_cell != "0x0" and ns > 1:
-        size = high_size_cell + size.lstrip('0x').ljust(8, '0')
+    if high_size_cell != 0 and ns > 1:
+        size = int(f"{hex(high_size_cell)}{size:08x}", base=16)
 
-    return int(addr, base=16), int(size, base=16)
-
+    return addr, size
 
 def get_clock_prop(sdt, value):
     clk_node = [node for node in sdt.tree['/'].subnodes() if node.phandle == value[0]]
@@ -337,8 +340,6 @@ def get_mapped_nodes(sdt, node_list, options):
         all_phandles.append(address_map[tmp])
         tmp = tmp + cells + na + 1
 
-    # Make sure node order is preserved
-    node_list.sort(key=lambda n: n.phandle, reverse=False)
     valid_nodes = [node for node in node_list for handle in all_phandles if handle == node.phandle]
     return valid_nodes
 
@@ -379,14 +380,25 @@ def xlnx_generate_config_struct(sdt, node, drvprop_list, plat, driver_proplist, 
             xlnx_generate_prop(sdt, node, prop, drvprop_list, plat, pad, phandle_prop)
         else:
             # Get the sub node
+            dummy_struct = None
             try:
                 phandle_value = node[subnode_prop].value[0]
             except KeyError:
-                print(f"ERROR: In valid property name {subnode_prop}\n")
-                sys.exit(1)
-                
-            sub_node = [node for node in sdt.tree['/'].subnodes() if node.phandle == phandle_value]
-            xlnx_generate_config_struct(sdt, sub_node[0], drvprop_list, plat, subnode_prop_list, 1)
+	        # Need to create dummy entries
+                dummy_struct = True
+
+            if dummy_struct:
+                for k,subnode_prop in enumerate(subnode_prop_list):
+                    if k == 0:
+                        plat.buf('\n\t\t{')
+                    plat.buf('\n\t\t%s' % hex(0x00))
+                    if k == len(subnode_prop_list)-1:
+                        plat.buf('\n\t\t}')
+                    else:
+                        plat.buf(',')
+            else:
+                sub_node = [node for node in sdt.tree['/'].subnodes() if node.phandle == phandle_value]
+                xlnx_generate_config_struct(sdt, sub_node[0], drvprop_list, plat, subnode_prop_list, 1)
     
         if i == len(driver_proplist)-1:
             if "subnode_phandle" not in prop:
@@ -600,7 +612,7 @@ def xlnx_generate_bm_config(tgt_node, sdt, options):
     drvpath = utils.get_dir_path(src_dir.rstrip(os.sep))
     drvname = utils.get_base_name(drvpath)
     # Incase of versioned driver strip the version info
-    drvname = re.sub(r"_v.*_.*$", "", drvname)
+    drvname = re.split("_v(\d+)_(\d+)", drvname)[0]
     yaml_file = os.path.join(drvpath, f"data/{drvname}.yaml")
     if not utils.is_file(yaml_file):
         print(f"{drvname} Driver doesn't have yaml file")
@@ -623,10 +635,9 @@ def xlnx_generate_bm_config(tgt_node, sdt, options):
            compat_string = node['compatible'].value
            for compa in compat_string:
                if compat in compa:
-                   driver_nodes.append(node)
+                   if not node in driver_nodes:
+                       driver_nodes.append(node)
 
-    # Remove duplicate nodes
-    driver_nodes = list(set(driver_nodes))
     if sdt.tree[tgt_node].propval('pruned-sdt') == ['']:
         driver_nodes = get_mapped_nodes(sdt, driver_nodes, options)
     if not config_struct:

@@ -98,7 +98,7 @@ def xlnx_generate_xparams(tgt_node, sdt, options):
                     driver_proplist = schema.get('additionalProperties',{})
             match_nodes = []
             for comp in driver_compatlist:
-                for node,compatible_list in sorted(node_dict.items(), key=lambda e: e[0], reverse=False):
+                for node,compatible_list in node_dict.items():
                    match = [x for x in compatible_list if comp == x]
                    if match:
                        node1 = [x for x in node_list if (x.abs_path == node)]
@@ -120,9 +120,18 @@ def xlnx_generate_xparams(tgt_node, sdt, options):
                 for i, prop in enumerate(driver_proplist):
                     pad = 0
                     phandle_prop = 0
+                    subnode_gen = 0
                     if isinstance(prop, dict):
                         pad = list(prop.values())[0]
                         prop = list(prop.keys())[0]
+                        if isinstance(pad, dict):
+                            subnode_prop = prop
+                            prop = list(pad.keys())[0]
+                            subnode_prop_list = list(pad.values())[0]
+                            if prop == "subnode_phandle":
+                                subnode_gen = 1
+                                pad = 0
+                                phandle_prop = 0
                         if pad == "phandle":
                             phandle_prop = 1
 
@@ -170,6 +179,12 @@ def xlnx_generate_xparams(tgt_node, sdt, options):
                                 if is_pl:
                                     plat.buf(f'\n#define XPAR_FABRIC_{label_name}_INTR {intr_id[0]}')
                                     canondef_dict.update({"FABRIC":intr_id[0]})
+                            else:
+                                if node.propval('xlnx,ip-name') != ['']:
+                                    ip_name = node.propval('xlnx,ip-name', list)[0]
+                                    if ip_name in ["psu_ipi", "psv_ipi", "psx_ipi", "psxl_ipi"]:
+                                        plat.buf(f'\n#define XPAR_{label_name}_INTR {hex(intr_id[0]+32)}')
+                                        canondef_dict.update({"INTR":hex(intr_id[0]+32)})
                         except KeyError:
                             intr_id = [0xFFFF]
 
@@ -211,6 +226,15 @@ def xlnx_generate_xparams(tgt_node, sdt, options):
                             prop_val = bm_config.get_phandle_regprop(sdt, prop, node[prop].value)
                             plat.buf(f'\n#define XPAR_{label_name}_{prop.upper()} {hex(prop_val)}')
                             canondef_dict.update({prop:hex(prop_val)})
+                        except KeyError:
+                            pass
+                    elif subnode_gen:
+                        try:
+                            phandle_value = node[subnode_prop].value[0]
+                            prop_val = 1
+                            subnode_prop = subnode_prop.replace("-", "_")
+                            plat.buf(f'\n#define XPAR_{label_name}_{subnode_prop.upper()} {hex(prop_val)}')
+                            canondef_dict.update({subnode_prop:hex(prop_val)})
                         except KeyError:
                             pass
                     elif prop == "ranges":
@@ -333,9 +357,42 @@ def xlnx_generate_xparams(tgt_node, sdt, options):
     if cci_en:
         plat.buf("\n#define XPAR_CACHE_COHERENT \n")
 
-    #CPU Freq related defines
+    #CPU parameters related defines
     match_cpunode = bm_config.get_cpu_node(sdt, options)
-    if re.search("microblaze", match_cpunode['compatible'].value[0]):
+    if re.search("microblaze-riscv", match_cpunode['compatible'].value[0]):
+        plat.buf(f"\n\n/*  CPU parameters definition */\n")
+        if match_cpunode.propval('xlnx,freq') != ['']:
+            cpu_freq = match_cpunode.propval('xlnx,freq', list)[0]
+            plat.buf(f'#define XPAR_CPU_CORE_CLOCK_FREQ_HZ {cpu_freq}\n')
+
+        if match_cpunode.propval('xlnx,use-dcache') != ['']:
+            use_dcache = match_cpunode.propval('xlnx,use-dcache', list)[0]
+            plat.buf(f'#define XPAR_MICROBLAZE_RISCV_USE_DCACHE {use_dcache}\n')
+        else:
+            plat.buf(f'#define XPAR_MICROBLAZE_RISCV_USE_DCACHE 0')
+        if match_cpunode.propval('xlnx,dcache-line-len') != ['']:
+            dcache_line_len = match_cpunode.propval('xlnx,dcache-line-len', list)[0]
+            plat.buf(f'#define XPAR_MICROBLAZE_RISCV_DCACHE_LINE_LEN {dcache_line_len}\n')
+        else:
+            plat.buf(f'#define XPAR_MICROBLAZE_RISCV_DCACHE_LINE_LEN 0\n')
+        if match_cpunode.propval('xlnx,dcache-byte-size') != ['']:
+            dcache_byte_size = match_cpunode.propval('xlnx,dcache-byte-size', list)[0]
+            plat.buf(f'#define XPAR_MICROBLAZE_RISCV_DCACHE_BYTE_SIZE {dcache_byte_size}\n')
+        if match_cpunode.propval('xlnx,use-icache') != ['']:
+            use_icache = match_cpunode.propval('xlnx,use-icache', list)[0]
+            plat.buf(f'#define XPAR_MICROBLAZE_RISCV_USE_ICACHE {use_icache}\n')
+        else:
+            plat.buf(f'#define XPAR_MICROBLAZE_RISCV_USE_ICACHE 0')
+        if match_cpunode.propval('xlnx,icache-line-len') != ['']:
+            icache_line_len = match_cpunode.propval('xlnx,icache-line-len', list)[0]
+            plat.buf(f'#define XPAR_MICROBLAZE_RISCV_ICACHE_LINE_LEN {icache_line_len}\n')
+        else:
+            plat.buf(f'#define XPAR_MICROBLAZE_RISCV_ICACHE_LINE_LEN 0\n')
+        if match_cpunode.propval('xlnx,icache-byte-size') != ['']:
+            icache_byte_size = match_cpunode.propval('xlnx,icache-byte-size', list)[0]
+            plat.buf(f'#define XPAR_MICROBLAZE_RISCV_ICACHE_BYTE_SIZE {icache_byte_size}\n')
+
+    elif re.search("microblaze", match_cpunode['compatible'].value[0]):
         if match_cpunode.propval('xlnx,freq') != ['']:
             cpu_freq = match_cpunode.propval('xlnx,freq', list)[0]
             plat.buf(f'\n#define XPAR_CPU_CORE_CLOCK_FREQ_HZ {cpu_freq}\n')

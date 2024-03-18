@@ -1,5 +1,6 @@
 #/*
 # * Copyright (c) 2021 Xilinx Inc. All rights reserved.
+# * Copyright (C) 2024 Advanced Micro Devices, Inc.  All rights reserved.
 # *
 # * Author:
 # *       Appana Durga Kedareswara rao <appana.durga.rao@xilinx.com>
@@ -68,7 +69,7 @@ def xlnx_generate_testapp(tgt_node, sdt, options):
                 drv_path_in_yaml = drv_data[entries]['path'][0]
             drv_name_in_yaml = os.path.basename(drv_path_in_yaml)
             # Incase of versioned component strip the version info
-            drv_name_in_yaml = re.sub(r"_v.*_.*$", "", drv_name_in_yaml)
+            drv_name_in_yaml = re.split("_v(\d+)_(\d+)", drv_name_in_yaml)[0]
             yaml_file_list += [os.path.join(drv_path_in_yaml, 'data', f"{drv_name_in_yaml}.yaml")]
     else:
         drv_dir = os.path.join(repo_path_data, "XilinxProcessorIPLib", "drivers")
@@ -153,7 +154,7 @@ def xlnx_generate_testapp(tgt_node, sdt, options):
                                     fd.seek(0, 0)
                                     fd.writelines(content)
                                 dec.append(testapp_schema[app]['declaration'])
-                                if not 'SelfTest' in app and not 'selftest' in app:
+                                if 'selftest' not in app.lower() and 'selftest' not in testapp_schema[app]['declaration'].lower():
                                     drvconfig_name = True
                         testapp_data.update({label_name:dec})
                         if drvconfig_name:

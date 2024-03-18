@@ -101,10 +101,7 @@ def get_memranges(tgt_node, sdt, options):
                start = [address_map[inx+i+1] for i in range(na)]
                size_list.append(address_map[inx+2*na])
                if na == 2 and start[0] != 0:
-                   val = str(start[1])
-                   pad = 8 - len(val)
-                   val = val.ljust(pad + len(val), '0')
-                   reg = int((str(hex(start[0])) + val), base=16)
+                   reg = int(f"{hex(start[0])}{start[1]:08x}", base=16)
                    addr_list.append(reg)
                elif na == 2:
                    addr_list.append(start[1])
@@ -165,17 +162,20 @@ def xlnx_generate_bm_linker(tgt_node, sdt, options):
     appname = utils.get_base_name(app_path)
     yaml_file = os.path.join(app_path, "data", f"{appname}.yaml")
     match_cpunode = get_cpu_node(sdt, options)
+    cpu_ip_name = None
+    stack_size = None
+    heap_size = None
     if match_cpunode.propval('xlnx,ip-name') != ['']:
-        ip_name = match_cpunode.propval('xlnx,ip-name', list)[0]
-        if "microblaze" in ip_name:
+        cpu_ip_name = match_cpunode.propval('xlnx,ip-name', list)[0]
+
+    if cpu_ip_name is not None:
+        if "microblaze" in cpu_ip_name:
             stack_size = 0x400
-            heap_size = 0x400
+            heap_size = 0x800
         else:
             stack_size = 0x2000
             heap_size = 0x2000
-    else:
-        stack_size = None
-        heap_size = None
+
     if not utils.is_file(yaml_file):
         print(f"{appname} doesn't have yaml file")
     else:
@@ -245,11 +245,11 @@ def xlnx_generate_bm_linker(tgt_node, sdt, options):
             default_ddr = key
         start,size = value[0], value[1]
         """
-        LMB BRAM initial 80 bytes being used by the linker vectors section in case of Microblaze
+        Initial 80 bytes is being used by the linker vectors section in case of Microblaze.
         Adjust the size and start address accordingly.
         """
-        if "lmb_bram" in key and not "microblaze_riscv" in machine and not "cortex" in machine:
-            start += 80
+        if cpu_ip_name == "microblaze" and start < 80:
+            start = 80
             size -= start
         """
         For R5 PSU DDR initial 1MB is reserved for tcm

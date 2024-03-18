@@ -1079,19 +1079,28 @@ def get_platform(tree):
     # set platform
     platform = None
     root_node = tree["/"]
-    root_compat = root_node.props("compatible")[0].value
+    root_model = str(root_node.props("model")[0].value)
 
-    for compat in root_compat:
-        if "zynqmp" in compat or 'zcu102' in compat:
-            platform = SOC_TYPE.ZYNQMP
-            break
-        elif "versal-net" in compat:
-            platform = SOC_TYPE.VERSAL_NET
-        elif "versal" in compat or 'vck190' in compat:
-            platform = SOC_TYPE.VERSAL
-            break
-        elif "xlnx,zynq-7000" in compat:
-            platform = SOC_TYPE.ZYNQ
+    zynqmp = [ 'zynqmp', 'zcu' ]
+    versal = [ 'vck190', 'vmk180', 'vpk120', 'vpk180', 'vck5000', 'vhk158', 'xlnx,versal', 'vek280', 'versal' ]
+    versalnet = [ 'versal-net', 'vc-p', 'a2197', 'Versal NET' ]
+    zynq = [ 'xlnx,zynq-7000', 'zc7', 'zynq' ]
+
+    for i in zynqmp:
+        if root_model.lower() in i or i in root_model.lower():
+            return SOC_TYPE.ZYNQMP
+    for i in versalnet:
+        if root_model.lower() in i or i in root_model.lower():
+            return SOC_TYPE.VERSAL_NET
+    for i in versal:
+        if root_model.lower() in i or i in root_model.lower():
+            return SOC_TYPE.VERSAL
+    for i in zynq:
+        if root_model.lower() in i or i in root_model.lower():
+            return SOC_TYPE.ZYNQ
+
+    if platform == None:
+        print("Unable to find data for platform: ", root_model)
 
     return platform
 
@@ -1176,19 +1185,10 @@ def xlnx_openamp_parse(sdt, options, verbose = 0 ):
 
 def xlnx_openamp_rpmsg_expand(tree, subnode, verbose = 0 ):
     # Xilinx-specific YAML expansion of RPMsg description.
-    platform = None
     root_node = tree["/"]
     root_compat = root_node.props("compatible")[0].value
+    platform = get_platform(tree)
 
-    for compat in root_compat:
-        if "zynqmp" in compat or 'zcu102' in compat:
-            platform = SOC_TYPE.ZYNQMP
-            break
-        elif "versal" in compat or 'vck190' in compat:
-            platform = SOC_TYPE.VERSAL
-            break
-        elif "xlnx,zynq-7000" in compat:
-            platform = SOC_TYPE.ZYNQ
     if platform == None:
         print("Unsupported platform: ", root_compat)
         return False

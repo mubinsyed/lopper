@@ -3131,6 +3131,8 @@ class LopperTree:
         """
         if parent_nodes:
             refd_nodes = starting_node.resolve_all_refs( [".*"] )
+        else:
+            refd_nodes = []
 
         subnodes_to_ref = starting_node.subnodes()
 
@@ -3811,7 +3813,7 @@ class LopperTree:
           address (int): target translated address to match
 
         Returns:
-          target node (LopperNode): the matching node, None otherwise
+          target node list (LopperNode): the matching node(s), empty otherwise
         """
 
         lopper.log._debug( f"addr_node {address}" )
@@ -3834,9 +3836,23 @@ class LopperTree:
         address_dict = {}
         for n in address_nodes:
             node_address = n.address()
+            ## you are here. we shouldn't clobber existing (parent) addresses if we get a match from
+            ## a child
             if node_address:
-                lopper.log._debug( f"node %s has address: {n.abs_path,hex(node_address)}" )
-                address_dict[hex(node_address)] = n
+                lopper.log._debug( f"node {n.abs_path} has address: {hex(node_address)}" )
+                try:
+                    existing_addr_node = address_dict[hex(node_address)]
+                    if existing_addr_node == n.parent:
+                        lopper.log._debug( f"  parent node {n.parent} is already @ the addreess, {n} has the same range" )
+                    else:
+                        lopper.log._debug( f"  non parent node {n.parent} is already @ the addreess, {n} has the same range" )
+
+                    # we add our node with the same address. This should be a child
+                    # node with a parent with "ranges;" .. but we've logged which case
+                    # it is above for later debug.
+                    address_dict[hex(node_address)].append( n )
+                except Exception as e:
+                    address_dict[hex(node_address)] = [ n ]
 
         try:
             target_node = address_dict[address]

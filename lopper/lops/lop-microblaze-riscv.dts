@@ -13,7 +13,7 @@
                       compatible = "system-device-tree-v1,lop,select-v1";
                       select_1;
                       select_2 = "/cpus_microblaze.*/cpu*.*:compatible:.*microblaze_riscv";
-                      select_3 = ":xlnx,use-muldiv:1";
+                      select_3 = ":xlnx,use-muldiv:!0";
                       lop_1_1_1 {
                           compatible = "system-device-tree-v1,lop,code-v1";
                           code = "
@@ -124,6 +124,18 @@
                                    libpath.append(archflags_libpath)
                                    libpath.append('/')
 
+                                   if n['xlnx,use-bitman-a'].value[0] == 1:
+                                       archflags.append('_zba')
+					
+                                   if n['xlnx,use-bitman-b'].value[0] == 1:
+                                       archflags.append('_zbb')
+
+                                   if n['xlnx,use-bitman-c'].value[0] == 1:
+                                       archflags.append('_zbc')
+
+                                   if n['xlnx,use-bitman-s'].value[0] == 1:
+                                       archflags.append('_zbs')
+
                                    if n['xlnx,use-dcache'].value[0] == 1 or n['xlnx,use-icache'].value[0] == 1:
                                        archflags.append('_zicbom')
 
@@ -136,8 +148,10 @@
 
                                    if n['xlnx,use-fpu'].value[0] == 1:
                                        libpath.append('f')
+                                       archflags.append('f') 
                                    elif n['xlnx,use-fpu'].value[0] == 2:
                                        libpath.append('d')
+                                       archflags.append('d') 
                                    
                                    libpath.append('/')
 

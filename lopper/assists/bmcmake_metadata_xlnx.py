@@ -36,7 +36,7 @@ def generate_drvcmake_metadata(sdt, node_list, src_dir, options):
     driver_compatlist = []
     drvname = utils.get_base_name(utils.get_dir_path(src_dir))
     # Incase of versioned component strip the version info
-    drvname = re.sub(r"_v.*_.*$", "", drvname)
+    drvname = re.split("_v(\d+)_(\d+)", drvname)[0]
     yaml_file = os.path.join(utils.get_dir_path(src_dir), "data", f"{drvname}.yaml")
     if not utils.is_file(yaml_file):
         print(f"{drvname} Driver doesn't have yaml file")
@@ -161,10 +161,9 @@ def getmatch_nodes(sdt, node_list, yaml_file, options):
         for node in node_list:
            compat_string = node['compatible'].value
            if compat in compat_string:
-               driver_nodes.append(node)
+               if not node in driver_nodes:
+                   driver_nodes.append(node)
 
-    # Remove duplicate nodes
-    driver_nodes = list(set(driver_nodes))
     if sdt.tree['/'].propval('pruned-sdt') == ['']:
         driver_nodes = bm_config.get_mapped_nodes(sdt, driver_nodes, options)
     return driver_nodes
@@ -198,7 +197,7 @@ def generate_hwtocmake_medata(sdt, node_list, src_path, repo_path_data, options,
     src_path = src_path.rstrip(os.path.sep)
     name = utils.get_base_name(utils.get_dir_path(src_path))
     # Incase of versioned component strip the version info
-    name = re.sub(r"_v.*_.*$", "", name)
+    name = re.split("_v(\d+)_(\d+)", name)[0]
     yaml_file = os.path.join(utils.get_dir_path(src_path), "data", f"{name}.yaml")
 
     if not utils.is_file(yaml_file):
@@ -292,6 +291,9 @@ def generate_hwtocmake_medata(sdt, node_list, src_path, repo_path_data, options,
             if re.search("microblaze", match_cpunode['compatible'].value[0]):
                 if match_cpunode.propval('xlnx,family') != ['']:
                     family = match_cpunode.propval('xlnx,family', list)[0]
+                    # Special handling for Versal platform update the variable to inline with PS processors.
+                    if family == "versal":
+                        family = "Versal"
                     fd.write(f'set(CMAKE_MACHINE "{family}" CACHE STRING "CMAKE MACHINE")\n')
             if match_cpunode.propval('reg') != ['']:
                 cpu_id = match_cpunode.propval('reg', list)[0]

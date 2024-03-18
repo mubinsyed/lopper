@@ -91,10 +91,6 @@ def xlnx_generate_overlay_dt(tgt_node, sdt, options):
                 symbol_node = node
             if node.name == "interrupt-multiplex":
                 imux_node = node
-            if platform == "cortexa53-zynqmp" and node.name == "interrupt-controller@f9010000":
-                gic_node = node
-            elif platform == "cortexa72-versal" and node.name == "interrupt-controller@f9000000":
-                gic_node = node
         except:
            pass
 
@@ -102,12 +98,16 @@ def xlnx_generate_overlay_dt(tgt_node, sdt, options):
     # i,e fragment@1/overlay@1 node. we can ignore these nodes
     # while reading the tree to add nodes under fragment@2/overlay@2
     ignore_list = []
+    phandle_dict = {"axistream-connected" : ['phandle 0'], "pcs-handle": ['phandle 0']}
     for node in root_sub_nodes:
-
         try:
+            label_name = get_label(sdt, symbol_node, node)
+            if platform == "cortexa53-zynqmp" and label_name == "gic_a53":
+                gic_node = node
+            elif platform == "cortexa72-versal" and label_name == "gic_a72":
+                gic_node = node
             if re.search("afi0" , node.name) or re.search("clocking" , node.name):
                ignore_list.append(node)
-               
         except:
            pass
 
@@ -259,7 +259,21 @@ def xlnx_generate_overlay_dt(tgt_node, sdt, options):
                             continue
                         plat.buf('\n')
                         plat.buf('\t' * int(rt))
-                        if re.search("clocks =", str(p)):
+                        phandle_prop = None
+                        if p.name in phandle_dict:
+                            # Get the phandle field in the value
+                            phandle_val = phandle_dict[p.name][0].split()
+                            phandle_index = phandle_val.index('phandle')
+                            phandle_to_search = p.value[phandle_index]
+                            node_found = [node for node in sdt.tree['/'].subnodes() if node.phandle == phandle_to_search]
+                            if node_found:
+                                p.value[phandle_index] = f'&{node_found[0].label}'
+                                mod_val =  ' '.join(str(value) for value in p.value)
+                                node[p].value = f'<{mod_val}>'
+                                phandle_prop = str(p).replace('"', '')
+                        if phandle_prop:
+                            plat.buf('%s' % phandle_prop)
+                        elif re.search("clocks =", str(p)):
                             plat.buf('%s' % node['clocks'])
                         else:
                             if p.name == "interrupt-parent":
@@ -285,6 +299,10 @@ def xlnx_generate_overlay_dt(tgt_node, sdt, options):
         except:
            pass
 
+    if parent_tab == 1:
+        plat.buf('\n')
+        plat.buf('\t' * int(rt))
+        plat.buf('};')
     plat.buf('\n};')
     plat.out(''.join(plat.get_buf()))
     if pl_node:

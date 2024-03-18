@@ -210,7 +210,9 @@ class domain_yaml(object):
                     for c in compatible_nodes:
                         if re.search( "cpu@" + cpu_number, c.name ):
                             cluster_mask = set_bit( cluster_mask, int(cpu_number) )
+                            cluster_cpu_label = c.label
                 else:
+                    cluster_cpu_label = ''
                     cluster_mask = 0xf
 
                 # cpu mode checks.
@@ -241,8 +243,9 @@ class domain_yaml(object):
 
                 if mode_mask:
                     cpu_entry = { "dev": cluster_name,    # remove before writing to yaml (if no roundtrip)
-                                  "spec_name": cpu_name,  # rmeove before writing to yaml (if no roundtrip)
+                                  "spec_name": cpu_name,  # remove before writing to yaml (if no roundtrip)
                                   "cluster" : cluster_name,
+                                  "cluster_cpu" : cluster_cpu_label,
                                   "cpumask" : hex(cluster_mask),
                                   "mode" : { "secure": secure,
                                              "el": hex(mode_mask)
@@ -250,8 +253,9 @@ class domain_yaml(object):
                                  }
                 else:
                     cpu_entry = { "dev": cluster_name,    # remove before writing to yaml (if no roundtrip)
-                                  "spec_name": cpu_name,  # rmeove before writing to yaml (if no roundtrip)
+                                  "spec_name": cpu_name,  # remove before writing to yaml (if no roundtrip)
                                   "cluster" : cluster_name,
+                                  "cluster_cpu" : cluster_cpu_label,
                                   "cpumask" : hex(cluster_mask),
                                   "mode" : { "secure": secure }
                                  }
@@ -368,9 +372,15 @@ class domain_yaml(object):
 
         try:
             address = device['addr']
-            tnode = self.sdt.tree.addr_node( address )
-            if not tnode:
+            tnodes = self.sdt.tree.addr_node( address )
+            if not tnodes:
                 raise Exception( f"No node found for: {device}" )
+
+            # we take the first node, as that will be the parent node
+            # in any sets of nodes with a 1:1 mapping, and is likely
+            # what we want.
+            tnode = tnodes[0]
+
         except Exception as e:
             _info( f"Exception while looking up node by address: {e}" )
             ## TODO: this may mean it is memory, processing should go
@@ -941,7 +951,7 @@ class isospec(object):
                             try:
                                 mem = yaml_node["memory"]
                                 if len(mem) == 1:
-                                    # force an empty entry if there's only one cpu, since this
+                                    # force an empty entry if there's only one memory, since this
                                     # ensures that the yaml will be in list form. If we don't
                                     # do this, then assists down the pipeline have to deal with
                                     # either lists or yaml nodes
@@ -975,6 +985,12 @@ class isospec(object):
                         except Exception as e:
                             _info( f"exception procesing cpus: {e}" )
 
+                    elif access_type == "ss_management":
+                        _info( f"spec type ss_management: {access}" )
+                        _info( f"no action required, skipping" )
+                    elif access_type == "ss_permissions":
+                        _info( f"spec type ss_permissions: {access}" )
+                        _info( f"no action required, skipping" )
                     else:
                         _error( f"unknown spec type: {access_type}" )
 

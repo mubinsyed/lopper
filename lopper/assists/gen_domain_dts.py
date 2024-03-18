@@ -16,7 +16,20 @@ sys.path.append(os.path.dirname(__file__))
 
 from baremetalconfig_xlnx import compat_list, get_cpu_node, get_mapped_nodes, get_label
 from common_utils import to_cmakelist
+import common_utils as utils
 from domain_access import update_mem_node
+
+def delete_unused_props( node, driver_proplist ):
+    child_list = list(node.child_nodes.keys())
+    for child in child_list:
+        child_node = node.child_nodes[child]
+        delete_unused_props( child_node, driver_proplist)
+        if not child_node.child_nodes.keys() and not child_node.__props__.keys():
+            node.delete(child_node)
+    prop_list = list(node.__props__.keys())
+    for prop in prop_list:
+        if prop not in driver_proplist:
+            node.delete(prop)
 
 def is_compat( node, compat_string_to_test ):
     if "module,gen_domain_dts" in compat_string_to_test:
@@ -81,8 +94,14 @@ def xlnx_generate_domain_dts(tgt_node, sdt, options):
 
     node_list = []
     for node in root_sub_nodes:
-        if linux_dt and (node.name == "memory@fffc0000" or node.name == "memory@bbf00000"):
-            sdt.tree.delete(node)
+        if linux_dt:
+            if node.name == "memory@fffc0000" or node.name == "memory@bbf00000":
+                sdt.tree.delete(node)
+            for entry in node.propval('compatible', list):
+                if entry.startswith("xlnx,ddr4-"):
+                    sdt.tree.delete(node)
+                    break
+
         if node.propval('status') != ['']:
             if linux_dt and node.name == "smmu@fd800000" and machine == "psu_cortexa53_0":
                 # It needs to be disabled only for ZynqMP
@@ -120,10 +139,7 @@ def xlnx_generate_domain_dts(tgt_node, sdt, options):
             for inx in indx_list:
                 start = [address_map[inx+i+1] for i in range(na)]
                 if na == 2 and start[0] != 0:
-                    val = str(start[1])
-                    pad = 8 - len(val)
-                    val = val.ljust(pad + len(val), '0')
-                    reg = int((str(hex(start[0])) + val), base=16)
+                    reg = int(f"{hex(start[0])}{start[1]:08x}", base=16)
                     prop_val.append(reg)
                 elif na == 2:
                     prop_val.append(start[1])
@@ -137,10 +153,7 @@ def xlnx_generate_domain_dts(tgt_node, sdt, options):
                 else:
                     high_size_cell = "0x0"
                 if high_size_cell != "0x0" and ns > 1:
-                    val = hex(size_cells[1]).lstrip('0x')
-                    pad = 8 - len(val)
-                    val = val.ljust(pad + len(val), '0')
-                    size = str(hex(size_cells[0])) + val
+                    size = f"{hex(size_cells[0])}{size_cells[1]:08x}"
                 prop_val.append(int(size, base=16))
         else:
             invalid_memnode.append(node)
@@ -166,8 +179,18 @@ def xlnx_generate_domain_dts(tgt_node, sdt, options):
                             'psu_pcie_attrib_0', 'psu_pcie_dma', 'psu_pcie_high1', 'psu_pcie_high2', 'psu_pcie_low',
                             'psu_pmu_global_0', 'psu_qspi_linear_0', 'psu_rpu', 'psu_rsa', 'psu_siou', 'psu_ipi',
                             'psx_PSM_PPU', 'psx_ram_instr_cntlr', 'psx_rpu',
-                            'psx_fpd_gpv']
+                            'psx_fpd_gpv', 'ddr4']
 
+    if linux_dt:
+        yaml_prune_list = ["xlnx,xdma-host.yaml", "xlnx,rfdc.yaml", "xlnx,sd-fec.yaml", "xlnx,clocking-wizard.yaml"]
+        driver_compatlist = []
+        # Shouldn't delete properties
+        driver_proplist = ["#interrupt-cells", "#address-cells", "#size-cells", "device_type"]
+        for yaml_prune in yaml_prune_list:
+            yaml_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), yaml_prune)
+            schema = utils.load_yaml(yaml_file)
+            driver_compatlist = driver_compatlist + compat_list(schema)
+            driver_proplist = driver_proplist + schema.get('required',[])
     for node in root_sub_nodes:
         if linux_dt:
             if node.propval('xlnx,ip-name') != ['']:
@@ -189,6 +212,10 @@ def xlnx_generate_domain_dts(tgt_node, sdt, options):
                     continue
                 else:
                     sdt.tree.delete(node)
+        elif node.propval('compatible') != [''] and linux_dt:
+            is_prune_node = [compat for compat in driver_compatlist if compat in node.propval('compatible', list)]
+            if is_prune_node:
+                delete_unused_props( node, driver_proplist)
 
     # Remove symbol node referneces
     symbol_node = sdt.tree['/__symbols__']
