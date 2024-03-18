@@ -94,8 +94,14 @@ def xlnx_generate_domain_dts(tgt_node, sdt, options):
 
     node_list = []
     for node in root_sub_nodes:
-        if linux_dt and (node.name == "memory@fffc0000" or node.name == "memory@bbf00000"):
-            sdt.tree.delete(node)
+        if linux_dt:
+            if node.name == "memory@fffc0000" or node.name == "memory@bbf00000":
+                sdt.tree.delete(node)
+            for entry in node.propval('compatible', list):
+                if entry.startswith("xlnx,ddr4-"):
+                    sdt.tree.delete(node)
+                    break
+
         if node.propval('status') != ['']:
             if linux_dt and node.name == "smmu@fd800000" and machine == "psu_cortexa53_0":
                 # It needs to be disabled only for ZynqMP
@@ -173,10 +179,10 @@ def xlnx_generate_domain_dts(tgt_node, sdt, options):
                             'psu_pcie_attrib_0', 'psu_pcie_dma', 'psu_pcie_high1', 'psu_pcie_high2', 'psu_pcie_low',
                             'psu_pmu_global_0', 'psu_qspi_linear_0', 'psu_rpu', 'psu_rsa', 'psu_siou', 'psu_ipi',
                             'psx_PSM_PPU', 'psx_ram_instr_cntlr', 'psx_rpu',
-                            'psx_fpd_gpv']
+                            'psx_fpd_gpv', 'ddr4']
 
     if linux_dt:
-        yaml_prune_list = ["xlnx,xdma-host.yaml", "xlnx,rfdc.yaml", "xlnx,sd-fec.yaml"]
+        yaml_prune_list = ["xlnx,xdma-host.yaml", "xlnx,rfdc.yaml", "xlnx,sd-fec.yaml", "xlnx,clocking-wizard.yaml"]
         driver_compatlist = []
         # Shouldn't delete properties
         driver_proplist = ["#interrupt-cells", "#address-cells", "#size-cells", "device_type"]
